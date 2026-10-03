@@ -1,3 +1,18 @@
+FROM node:24-bookworm AS webbuilder
+
+# Build the Management Center panel. `npm run build` runs tsc + vite and then
+# scripts/emit-management-asset.mjs, which writes dist/management.html - the
+# asset the Go build embeds and serves local-first.
+WORKDIR /web
+
+COPY web/package.json ./
+
+RUN npm install --no-audit --no-fund
+
+COPY web/ ./
+
+RUN npm run build
+
 FROM golang:1.26-bookworm AS builder
 
 WORKDIR /app
@@ -9,6 +24,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# Overwrite the checkout's dist/ with the freshly built panel so go:embed picks
+# up the real asset instead of whatever was committed.
+COPY --from=webbuilder /web/dist/ ./web/dist/
 
 ARG VERSION=dev
 ARG COMMIT=none

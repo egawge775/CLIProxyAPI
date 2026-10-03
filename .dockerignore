@@ -21,6 +21,10 @@ logs
 conv
 config.yaml
 
+# Frontend dependencies and local build output (the Dockerfile builds web/ itself)
+web/node_modules
+web/dist/index.html
+
 # Development/editor
 bin
 .vscode
