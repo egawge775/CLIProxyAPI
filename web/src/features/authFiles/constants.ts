@@ -57,7 +57,7 @@ export const OAUTH_PROVIDER_PRESETS = [
 const OAUTH_PROVIDER_EXCLUDES = new Set(['all', 'unknown', 'empty']);
 
 export const MIN_CARD_PAGE_SIZE = 3;
-export const MAX_CARD_PAGE_SIZE = 30;
+export const MAX_CARD_PAGE_SIZE = 100;
 
 /** 批量下载打包后的文件名，与后端打包端点保持一致的默认值。 */
 export const AUTH_FILES_ARCHIVE_FILENAME = 'auth-files.zip';
