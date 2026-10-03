@@ -65,6 +65,13 @@ func StartAutoUpdater(ctx context.Context, configFilePath string) {
 		return
 	}
 
+	// Local-first: when web/ was built into this binary the panel is served from
+	// the embedded copy, so the upstream release asset must not overwrite it.
+	if HasEmbeddedManagementHTML() {
+		log.Info("management control panel served from the embedded web/ build; upstream panel updates disabled")
+		return
+	}
+
 	schedulerConfigPath.Store(configFilePath)
 
 	schedulerOnce.Do(func() {

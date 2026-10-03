@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -634,6 +635,114 @@ func reconcileAuthFileCooldownState(auth *coreauth.Auth, now time.Time) (unavail
 	return unavailable, status, statusMessage, nextRetry
 }
 
+// Cooldown states reported by the credential list so clients can filter by
+// cooldown without a second request per credential.
+const (
+	cooldownStateNone      = "none"
+	cooldownStateQuota     = "quota"
+	cooldownStateBackoff   = "backoff"
+	cooldownStateChallenge = "challenge"
+)
+
+// authFileLastErrorSnapshot returns the most recent recorded upstream error
+// across the credential's model states.
+func authFileLastErrorSnapshot(auth *coreauth.Auth) (httpStatus int, code string, message string) {
+	if auth == nil {
+		return 0, "", ""
+	}
+	var updatedAt time.Time
+	for _, state := range auth.ModelStates {
+		if state == nil || state.LastError == nil {
+			continue
+		}
+		if httpStatus != 0 && !state.UpdatedAt.After(updatedAt) {
+			continue
+		}
+		if state.LastError.HTTPStatus <= 0 && strings.TrimSpace(state.LastError.Code) == "" {
+			continue
+		}
+		httpStatus = state.LastError.HTTPStatus
+		code = strings.TrimSpace(state.LastError.Code)
+		message = strings.TrimSpace(state.LastError.Message)
+		updatedAt = state.UpdatedAt
+	}
+	return httpStatus, code, message
+}
+
+// authFileCooldownSnapshot classifies the credential's cooldown and returns a
+// human readable reason plus the earliest recovery instant. Values stay stable
+// so clients can filter by them: none, quota, backoff, challenge.
+func authFileCooldownSnapshot(auth *coreauth.Auth, now time.Time) (state string, reason string, nextRetry time.Time) {
+	if auth == nil || auth.Disabled || auth.Status == coreauth.StatusDisabled {
+		return cooldownStateNone, "", time.Time{}
+	}
+
+	track := func(candidate time.Time) {
+		if candidate.IsZero() {
+			return
+		}
+		if nextRetry.IsZero() || candidate.After(nextRetry) {
+			nextRetry = candidate
+		}
+	}
+
+	// Credential-level quota: explicit recover deadline on the credential itself.
+	if auth.Quota.Exceeded {
+		reason = strings.TrimSpace(auth.Quota.Reason)
+		if auth.Quota.NextRecoverAt.After(now) {
+			track(auth.Quota.NextRecoverAt)
+		} else if !auth.NextRetryAfter.After(now) {
+			track(auth.NextRetryAfter)
+		}
+		if !nextRetry.IsZero() {
+			return cooldownStateQuota, reason, nextRetry
+		}
+	}
+
+	// Temporary credential block with a future retry deadline.
+	if auth.Unavailable && auth.NextRetryAfter.After(now) {
+		track(auth.NextRetryAfter)
+		return cooldownStateBackoff, reason, nextRetry
+	}
+
+	// Immediate failure backoff (429 without a deadline, 401/5xx auth failures).
+	if auth.Status == coreauth.StatusError || auth.Unavailable {
+		httpStatus, code, _ := authFileLastErrorSnapshot(auth)
+		if code == "cloudflare_challenge" || httpStatus == http.StatusForbidden {
+			if reason == "" {
+				reason = "cloudflare_challenge"
+			}
+			return cooldownStateChallenge, reason, nextRetry
+		}
+		return cooldownStateBackoff, reason, nextRetry
+	}
+
+	// Per-model cooldowns: the credential is still usable for other models, but
+	// the error filters should not lose sight of them.
+	activeModelCooldown := false
+	for _, state := range auth.ModelStates {
+		if state == nil {
+			continue
+		}
+		switch {
+		case !state.NextRetryAfter.IsZero() && state.NextRetryAfter.After(now):
+			activeModelCooldown = true
+			track(state.NextRetryAfter)
+		case state.Quota.Exceeded && state.Quota.NextRecoverAt.After(now):
+			activeModelCooldown = true
+			track(state.Quota.NextRecoverAt)
+		}
+	}
+	if activeModelCooldown {
+		if reason == "" {
+			reason = "model_quota"
+		}
+		return cooldownStateBackoff, reason, nextRetry
+	}
+
+	return cooldownStateNone, reason, time.Time{}
+}
+
 func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported ...map[string]struct{}) gin.H {
 	if auth == nil {
 		return nil
@@ -651,7 +760,8 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported .
 	if name == "" {
 		name = auth.ID
 	}
-	unavailable, status, statusMessage, nextRetryAfter := reconcileAuthFileCooldownState(auth, time.Now().UTC())
+	now := time.Now().UTC()
+	unavailable, status, statusMessage, nextRetryAfter := reconcileAuthFileCooldownState(auth, now)
 	entry := gin.H{
 		"id":             auth.ID,
 		"auth_index":     auth.Index,
@@ -724,6 +834,27 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported .
 	}
 	if !nextRetryAfter.IsZero() {
 		entry["next_retry_after"] = nextRetryAfter
+	}
+	// Error-code and cooldown filters read these directly off the list entry so a
+	// client never needs one request per credential.
+	if httpStatus, code, message := authFileLastErrorSnapshot(auth); httpStatus > 0 || code != "" {
+		if httpStatus > 0 {
+			entry["last_error_http_status"] = httpStatus
+		}
+		if code != "" {
+			entry["last_error_code"] = code
+		}
+		if message != "" {
+			entry["last_error_message"] = message
+		}
+	}
+	cooldownState, cooldownReason, cooldownNextRetry := authFileCooldownSnapshot(auth, now)
+	entry["cooldown_state"] = cooldownState
+	if cooldownReason != "" {
+		entry["cooldown_reason"] = cooldownReason
+	}
+	if !cooldownNextRetry.IsZero() {
+		entry["cooldown_next_retry_at"] = cooldownNextRetry
 	}
 	if path != "" {
 		entry["path"] = path

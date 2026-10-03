@@ -313,6 +313,16 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+
+	// Local-first: the panel built from web/ and embedded in this binary wins, so
+	// self-hosted changes are never replaced by the upstream release asset.
+	if data, ok := managementasset.EmbeddedManagementHTML(); ok {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.Header("Cache-Control", "no-cache")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+		return
+	}
+
 	filePath := managementasset.FilePath(s.configFilePath)
 	if strings.TrimSpace(filePath) == "" {
 		c.AbortWithStatus(http.StatusNotFound)
