@@ -188,6 +188,62 @@ func TestAntigravityWebSearchModelForRequiresRequestedModelCapability(t *testing
 	}
 }
 
+// TestAntigravityModelsKeepClaude46Alongside55 guards the transition period in
+// which Google replaces the Antigravity Claude 4.6 models with 5.5: credentials
+// whose accounts are still entitled to 4.6 must keep seeing both generations
+// even when the active catalogue no longer lists 4.6.
+func TestAntigravityModelsKeepClaude46Alongside55(t *testing.T) {
+	previous := getModels()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = previous
+		modelsCatalogStore.mu.Unlock()
+	})
+
+	// Simulate a catalogue (embedded or remotely refreshed) that dropped 4.6.
+	modelsCatalogStore.mu.Lock()
+	modelsCatalogStore.data = &staticModelsJSON{
+		Antigravity: []*ModelInfo{
+			{ID: "claude-opus-5-5-high", Type: "antigravity"},
+			{ID: "claude-sonnet-5-5-high", Type: "antigravity"},
+			{ID: "gemini-3.6-flash-high", Type: "antigravity"},
+		},
+	}
+	modelsCatalogStore.mu.Unlock()
+
+	byID := make(map[string]*ModelInfo)
+	for _, model := range GetAntigravityModels() {
+		if model != nil {
+			byID[model.ID] = model
+		}
+	}
+
+	for _, id := range []string{"claude-opus-4-6-thinking", "claude-sonnet-4-6"} {
+		info := byID[id]
+		if info == nil {
+			t.Fatalf("Antigravity catalogue dropped %s and it was not restored", id)
+		}
+		if !strings.EqualFold(info.Type, "antigravity") || !strings.EqualFold(info.OwnedBy, "antigravity") {
+			t.Errorf("%s routing metadata = type %q owned_by %q, want antigravity", id, info.Type, info.OwnedBy)
+		}
+		if info.ContextLength != 200000 || info.MaxCompletionTokens != 64000 {
+			t.Errorf("%s limits = %d/%d, want 200000/64000", id, info.ContextLength, info.MaxCompletionTokens)
+		}
+		if info.Thinking == nil || info.Thinking.Min != 1024 || info.Thinking.Max != 64000 || !info.Thinking.ZeroAllowed || !info.Thinking.DynamicAllowed {
+			t.Errorf("%s thinking support = %+v, want min=1024 max=64000 zero+dynamic allowed", id, info.Thinking)
+		}
+		if static := LookupStaticModelInfo(id); static == nil {
+			t.Errorf("LookupStaticModelInfo(%s) = nil, want the fallback definition", id)
+		}
+	}
+
+	for _, id := range []string{"claude-opus-5-5-high", "claude-sonnet-5-5-high", "gemini-3.6-flash-high"} {
+		if byID[id] == nil {
+			t.Errorf("catalogue model %s disappeared from the Antigravity model list", id)
+		}
+	}
+}
+
 func TestValidateModelsCatalog_Meta(t *testing.T) {
 	valid := &staticModelsJSON{
 		Meta: []*ModelInfo{
