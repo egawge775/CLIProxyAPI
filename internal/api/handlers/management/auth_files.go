@@ -670,8 +670,8 @@ func authFileLastErrorSnapshot(auth *coreauth.Auth) (httpStatus int, code string
 }
 
 // authFileCooldownSnapshot classifies the credential's cooldown and returns a
-// human readable reason plus the earliest recovery instant. Values stay stable
-// so clients can filter by them: none, quota, backoff, challenge.
+// human readable reason plus the recovery instant. Values stay stable so
+// clients can filter on them: none, quota, backoff, challenge.
 func authFileCooldownSnapshot(auth *coreauth.Auth, now time.Time) (state string, reason string, nextRetry time.Time) {
 	if auth == nil || auth.Disabled || auth.Status == coreauth.StatusDisabled {
 		return cooldownStateNone, "", time.Time{}
@@ -743,6 +743,56 @@ func authFileCooldownSnapshot(auth *coreauth.Auth, now time.Time) (state string,
 	return cooldownStateNone, reason, time.Time{}
 }
 
+// Antigravity serves Claude 4.6 and 5.5 to different accounts: Google keeps 4.6
+// for some subscriptions and 5.5 for others. Advertising both to every account
+// makes an ineligible account answer with a "no longer available" notice, so each
+// credential reports which Claude generation its registered models cover.
+const (
+	claudeGeneration46   = "claude-4-6"
+	claudeGeneration55   = "claude-5-5"
+	credentialModelsAll  = "all"
+	credentialModelsNone = "none"
+)
+
+// normalizeCredentialModelID strips routing prefixes and thinking suffixes so
+// catalog IDs and provider-prefixed IDs land in the same bucket.
+func normalizeCredentialModelID(modelID string) string {
+	normalized := strings.ToLower(strings.TrimSpace(modelID))
+	if idx := strings.Index(normalized, "/"); idx >= 0 {
+		normalized = normalized[idx+1:]
+	}
+	if idx := strings.IndexAny(normalized, "(["); idx >= 0 {
+		normalized = normalized[:idx]
+	}
+	return strings.TrimSpace(normalized)
+}
+
+// credentialClaudeGeneration reports the Claude generation coverage of one
+// credential: "all", "claude-4-6", "claude-5-5" or "none".
+func credentialClaudeGeneration(modelIDs []string) string {
+	has46 := false
+	has55 := false
+	for _, modelID := range modelIDs {
+		normalized := normalizeCredentialModelID(modelID)
+		switch {
+		case strings.Contains(normalized, "claude-opus-4-6"), strings.Contains(normalized, "claude-sonnet-4-6"):
+			has46 = true
+		case strings.Contains(normalized, "claude-opus-5-5"), strings.Contains(normalized, "claude-sonnet-5-5"):
+			has55 = true
+		}
+	}
+	switch {
+	case has46 && has55:
+		return credentialModelsAll
+	case has46:
+		return claudeGeneration46
+	case has55:
+		return claudeGeneration55
+	default:
+		return credentialModelsNone
+	}
+}
+
 func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported ...map[string]struct{}) gin.H {
 	if auth == nil {
 		return nil
@@ -760,8 +810,7 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported .
 	if name == "" {
 		name = auth.ID
 	}
-	now := time.Now().UTC()
-	unavailable, status, statusMessage, nextRetryAfter := reconcileAuthFileCooldownState(auth, now)
+	unavailable, status, statusMessage, nextRetryAfter := reconcileAuthFileCooldownState(auth, time.Now().UTC())
 	entry := gin.H{
 		"id":             auth.ID,
 		"auth_index":     auth.Index,
@@ -835,7 +884,7 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported .
 	if !nextRetryAfter.IsZero() {
 		entry["next_retry_after"] = nextRetryAfter
 	}
-	// Error-code and cooldown filters read these directly off the list entry so a
+	// Error-code and cooldown filters read these straight off the list entry, so a
 	// client never needs one request per credential.
 	if httpStatus, code, message := authFileLastErrorSnapshot(auth); httpStatus > 0 || code != "" {
 		if httpStatus > 0 {
@@ -848,7 +897,7 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported .
 			entry["last_error_message"] = message
 		}
 	}
-	cooldownState, cooldownReason, cooldownNextRetry := authFileCooldownSnapshot(auth, now)
+	cooldownState, cooldownReason, cooldownNextRetry := authFileCooldownSnapshot(auth, time.Now().UTC())
 	entry["cooldown_state"] = cooldownState
 	if cooldownReason != "" {
 		entry["cooldown_reason"] = cooldownReason
@@ -856,6 +905,16 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quotaSupported .
 	if !cooldownNextRetry.IsZero() {
 		entry["cooldown_next_retry_at"] = cooldownNextRetry
 	}
+	// Claude generation coverage: Antigravity grants 4.6 and 5.5 per account, so
+	// the list exposes which generation this credential can actually route to.
+	registeredModels := registry.GetGlobalRegistry().GetModelsForClient(auth.ID)
+	modelIDs := make([]string, 0, len(registeredModels))
+	for _, model := range registeredModels {
+		if model != nil {
+			modelIDs = append(modelIDs, model.ID)
+		}
+	}
+	entry["claude_generation"] = credentialClaudeGeneration(modelIDs)
 	if path != "" {
 		entry["path"] = path
 		entry["source"] = "file"

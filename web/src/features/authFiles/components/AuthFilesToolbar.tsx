@@ -33,6 +33,9 @@ export type AuthFilesToolbarProps = {
   tierFilter: string;
   tierOptions: Array<{ value: string; label: string }>;
   onTierFilterChange: (value: string) => void;
+  claudeGenerationFilter: string;
+  claudeGenerationOptions: Array<{ value: string; label: string }>;
+  onClaudeGenerationFilterChange: (value: string) => void;
   pageSizeInput: string;
   onPageSizeInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onPageSizeCommit: (rawValue: string) => void;
@@ -67,6 +70,9 @@ export function AuthFilesToolbar(props: AuthFilesToolbarProps) {
     tierFilter,
     tierOptions,
     onTierFilterChange,
+    claudeGenerationFilter,
+    claudeGenerationOptions,
+    onClaudeGenerationFilterChange,
     pageSizeInput,
     onPageSizeInputChange,
     onPageSizeCommit,
@@ -165,6 +171,16 @@ export function AuthFilesToolbar(props: AuthFilesToolbarProps) {
           options={tierOptions}
           onChange={onTierFilterChange}
           ariaLabel={t('auth_files.tier_filter_label')}
+          size="sm"
+        />
+      </div>
+
+      <div className={styles.sort}>
+        <Select
+          value={claudeGenerationFilter}
+          options={claudeGenerationOptions}
+          onChange={onClaudeGenerationFilterChange}
+          ariaLabel={t('auth_files.claude_generation_filter_label')}
           size="sm"
         />
       </div>

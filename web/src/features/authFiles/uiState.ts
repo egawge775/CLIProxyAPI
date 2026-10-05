@@ -9,7 +9,12 @@ export const AUTH_FILES_STATUS_FILTER_MODES = [
 export type AuthFilesSortMode = (typeof AUTH_FILES_SORT_MODES)[number];
 export type AuthFilesStatusFilterMode = (typeof AUTH_FILES_STATUS_FILTER_MODES)[number];
 
-export const AUTH_FILES_DROPDOWN_FILTER_KEYS = ['errorCode', 'cooldown', 'tier'] as const;
+export const AUTH_FILES_DROPDOWN_FILTER_KEYS = [
+  'errorCode',
+  'cooldown',
+  'tier',
+  'claudeGeneration',
+] as const;
 
 export type AuthFilesDropdownFilterKey = (typeof AUTH_FILES_DROPDOWN_FILTER_KEYS)[number];
 /** 缺少某个键表示该维度不筛选（默认 'all'），因此旧持久化数据仍然可用。 */

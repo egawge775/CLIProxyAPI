@@ -154,6 +154,12 @@ export const getAuthFileTier = (file: AuthFileItem): string | null => {
   return null;
 };
 
+/** 反重力账号实际可用的 Claude 代次：all / claude-4-6 / claude-5-5 / none。 */
+export const getAuthFileClaudeGeneration = (file: AuthFileItem): string | null => {
+  const raw = file['claude_generation'];
+  return typeof raw === 'string' && raw.trim() ? raw.trim().toLowerCase() : null;
+};
+
 /** 这些 status_message 视为健康，不触发告警态。 */
 export const HEALTHY_AUTH_FILE_STATUS_MESSAGES = new Set([
   'ok',

@@ -43,6 +43,7 @@ import {
   getAuthFileCooldownState,
   getAuthFileErrorStatus,
   getAuthFileTier,
+  getAuthFileClaudeGeneration,
 } from '@/features/authFiles/constants';
 import { useAuthFilesData } from '@/features/authFiles/hooks/useAuthFilesData';
 import { useAuthFilesModels } from '@/features/authFiles/hooks/useAuthFilesModels';
@@ -462,6 +463,19 @@ export function AuthFilesPage() {
           if (fileTier !== null && fileTier !== tier) return false;
         }
 
+        // 反重力按账号发放 Claude 代次：only46 = 只能用 4.6，only55 = 只能用 5.5。
+        const claudeGeneration = dropdownFilters.claudeGeneration ?? 'all';
+        if (claudeGeneration !== 'all') {
+          const generation = getAuthFileClaudeGeneration(file);
+          if (generation !== null) {
+            if (claudeGeneration === 'both') {
+              if (generation !== 'all') return false;
+            } else if (generation !== claudeGeneration) {
+              return false;
+            }
+          }
+        }
+
         return true;
       }),
     [dropdownFilters, filesMatchingStatusFilters]
@@ -496,6 +510,17 @@ export function AuthFilesPage() {
       { value: 'free', label: t('auth_files.tier_filter_free') },
       { value: 'pro', label: t('auth_files.tier_filter_pro') },
       { value: 'ultra', label: t('auth_files.tier_filter_ultra') },
+    ],
+    [t]
+  );
+
+  const claudeGenerationFilterOptions = useMemo(
+    () => [
+      { value: 'all', label: t('auth_files.dropdown_filter_all') },
+      { value: 'claude-4-6', label: t('auth_files.claude_generation_filter_46') },
+      { value: 'claude-5-5', label: t('auth_files.claude_generation_filter_55') },
+      { value: 'both', label: t('auth_files.claude_generation_filter_both') },
+      { value: 'none', label: t('auth_files.claude_generation_filter_none') },
     ],
     [t]
   );
@@ -742,6 +767,11 @@ export function AuthFilesPage() {
           tierFilter={dropdownFilters.tier ?? 'all'}
           tierOptions={tierFilterOptions}
           onTierFilterChange={(value) => updateDropdownFilter('tier', value)}
+          claudeGenerationFilter={dropdownFilters.claudeGeneration ?? 'all'}
+          claudeGenerationOptions={claudeGenerationFilterOptions}
+          onClaudeGenerationFilterChange={(value) =>
+            updateDropdownFilter('claudeGeneration', value)
+          }
           pageSizeInput={pageSizeInput}
           onPageSizeInputChange={handlePageSizeChange}
           onPageSizeCommit={commitPageSizeInput}

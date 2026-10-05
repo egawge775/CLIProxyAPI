@@ -82,56 +82,9 @@ func GetKimiModels() []*ModelInfo {
 	return cloneModelInfos(getModels().Kimi)
 }
 
-// antigravityClaude46FallbackModels keeps the Claude 4.6 Antigravity models
-// registered even when the catalogue (embedded or remotely refreshed) drops
-// them. Accounts with 4.6 entitlement (Pro/Ultra) must keep seeing both 4.6 and
-// 5.5 during Google's rollout transition.
-var antigravityClaude46FallbackModels = []*ModelInfo{
-	{
-		ID:                  "claude-opus-4-6-thinking",
-		Object:              "model",
-		OwnedBy:             "antigravity",
-		Type:                "antigravity",
-		DisplayName:         "Claude Opus 4.6 (Thinking)",
-		Name:                "claude-opus-4-6-thinking",
-		Description:         "Claude Opus 4.6 (Thinking)",
-		ContextLength:       200000,
-		MaxCompletionTokens: 64000,
-		Thinking: &ThinkingSupport{
-			Min:            1024,
-			Max:            64000,
-			ZeroAllowed:    true,
-			DynamicAllowed: true,
-		},
-		SupportedInputModalities:  []string{"text", "image"},
-		SupportedOutputModalities: []string{"text"},
-	},
-	{
-		ID:                  "claude-sonnet-4-6",
-		Object:              "model",
-		OwnedBy:             "antigravity",
-		Type:                "antigravity",
-		DisplayName:         "Claude Sonnet 4.6 (Thinking)",
-		Name:                "claude-sonnet-4-6",
-		Description:         "Claude Sonnet 4.6 (Thinking)",
-		ContextLength:       200000,
-		MaxCompletionTokens: 64000,
-		Thinking: &ThinkingSupport{
-			Min:            1024,
-			Max:            64000,
-			ZeroAllowed:    true,
-			DynamicAllowed: true,
-		},
-		SupportedInputModalities:  []string{"text", "image"},
-		SupportedOutputModalities: []string{"text"},
-	},
-}
-
 // GetAntigravityModels returns the standard Antigravity model definitions.
-// Catalogue entries win on ID conflicts; the Claude 4.6 fallback models are
-// merged in so they stay available alongside 5.5.
 func GetAntigravityModels() []*ModelInfo {
-	return upsertModelInfos(cloneModelInfos(getModels().Antigravity), antigravityClaude46FallbackModels...)
+	return cloneModelInfos(getModels().Antigravity)
 }
 
 var staticDevinModels = []*ModelInfo{
@@ -592,7 +545,7 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 		data.AIStudio,
 		data.CodexPro,
 		data.Kimi,
-		GetAntigravityModels(),
+		data.Antigravity,
 		data.XAI,
 		data.Devin,
 		staticDevinModels,
