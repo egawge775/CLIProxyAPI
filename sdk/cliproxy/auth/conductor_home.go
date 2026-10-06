@@ -1296,6 +1296,13 @@ func (m *Manager) findAllAntigravityCreditsCandidateAuths(ctx context.Context, r
 		if !strings.Contains(strings.ToLower(strings.TrimSpace(routeModel)), "claude") {
 			continue
 		}
+		// Claude generations are granted per account: Google keeps 4.6 for some
+		// subscriptions and 5.5 for others. Without this gate the credits fallback
+		// retries a 4.6 request on an account that only serves 5.5, which answers
+		// "opus 4.6 is no longer available".
+		if !m.authSupportsRouteModel(registry.GetGlobalRegistry(), auth, routeModel) {
+			continue
+		}
 		providerKey := executorKeyFromAuth(auth)
 		executor, ok := m.executorLocked(providerKey)
 		if !ok {

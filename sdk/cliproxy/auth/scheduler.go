@@ -421,7 +421,7 @@ func (s *authScheduler) pickSingleWithStrategy(ctx context.Context, provider, mo
 	if shard == nil {
 		return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
-	predicate := scheduledAuthPredicate(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin)
+	predicate := scheduledAuthPredicateForModel(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin, modelKey)
 	if picked := shard.pickReadyLocked(preferWebsocket, strategy, predicate); picked != nil {
 		return picked, nil
 	}
@@ -482,14 +482,14 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 			return nil, "", &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
 		shard := providerState.ensureModelLocked(modelKey, time.Now())
-		predicate := scheduledAuthPredicate(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin)
+		predicate := scheduledAuthPredicateForModel(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin, modelKey)
 		if picked := shard.pickReadyLocked(false, strategy, predicate); picked != nil {
 			return picked, providerKey, nil
 		}
 		return nil, "", shard.unavailableErrorLocked("mixed", model, predicate)
 	}
 
-	predicate := scheduledAuthPredicate(eligibility, tried, "", strategy == schedulerStrategyWeightedRoundRobin)
+	predicate := scheduledAuthPredicateForModel(eligibility, tried, "", strategy == schedulerStrategyWeightedRoundRobin, modelKey)
 	candidateShards := make([]*modelScheduler, len(normalized))
 	bestPriority := 0
 	hasCandidate := false
@@ -706,7 +706,23 @@ func (s *authScheduler) mixedUnavailableErrorLocked(providers []string, model st
 
 // scheduledAuthPredicate filters request-ineligible auths before scheduler state advances.
 func scheduledAuthPredicate(eligibility authSelectionEligibility, tried map[string]struct{}, pinnedAuthID string, requirePositiveWeight bool) func(*scheduledAuth) bool {
-	return func(entry *scheduledAuth) bool {
+	return scheduledAuthPredicateForModel(eligibility, tried, pinnedAuthID, requirePositiveWeight, "")
+}
+
+// scheduledAuthPredicateForModel narrows the predicate to one model. Antigravity
+// grants Claude generations per account, so a shard can still hold stale entries
+// for an account whose entitlement changed; the guard below re-checks the model
+// set captured from the registry, which keeps an "only 5.5" account out of a
+// 4.6 request instead of letting the upstream answer "4.6 is no longer
+// available".
+func scheduledAuthPredicateForModel(
+	eligibility authSelectionEligibility,
+	tried map[string]struct{},
+	pinnedAuthID string,
+	requirePositiveWeight bool,
+	modelKey string,
+) func(*scheduledAuth) bool {
+	base := func(entry *scheduledAuth) bool {
 		if entry == nil || entry.auth == nil || !eligibility.allows(entry.auth) {
 			return false
 		}
@@ -722,6 +738,19 @@ func scheduledAuthPredicate(eligibility authSelectionEligibility, tried map[stri
 			}
 		}
 		return true
+	}
+	modelKey = canonicalModelKey(modelKey)
+	if modelKey == "" {
+		return base
+	}
+	return func(entry *scheduledAuth) bool {
+		if !base(entry) {
+			return false
+		}
+		if entry.meta == nil {
+			return false
+		}
+		return entry.meta.supportsModel(modelKey)
 	}
 }
 
