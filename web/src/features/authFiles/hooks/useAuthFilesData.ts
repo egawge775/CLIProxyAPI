@@ -895,10 +895,10 @@ export function useAuthFilesData(options?: UseAuthFilesDataOptions): UseAuthFile
             : undefined;
         if (status !== 404) {
           // 真实失败（鉴权、磁盘错误等）要暴露，不能伪装成成功。
-          showNotification(t('auth_files.batch_download_partial', {
-            success: 0,
-            failed: uniqueNames.length,
-          }), 'warning');
+          showNotification(
+            t('auth_files.batch_download_partial', { success: 0, failed: uniqueNames.length }),
+            'warning'
+          );
           finishSelection();
           return;
         }

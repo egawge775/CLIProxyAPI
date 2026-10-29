@@ -28,8 +28,15 @@ export type AuthFileModelItem = {
 export type AuthFileIconAsset = string | { light: string; dark: string };
 
 export type QuotaProviderType =
-  'antigravity' | 'claude' | 'codex' | 'devin' | 'kimi' | 'xai' | 'meta';
-export type AuthFileQuotaFilter = QuotaProviderType | 'all' | null;
+  | 'antigravity'
+  | 'claude'
+  | 'codex'
+  | 'devin'
+  | 'kimi'
+  | 'meta'
+  | 'plugin'
+  | 'xai';
+export type AuthFileQuotaFilter = string | null;
 export type OAuthConfigLoadError = 'loading' | 'unsupported' | 'load' | null;
 
 export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
@@ -39,6 +46,7 @@ export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
   'codex',
   'devin',
   'kimi',
+  'plugin',
   'xai',
 ]);
 
@@ -58,9 +66,6 @@ const OAUTH_PROVIDER_EXCLUDES = new Set(['all', 'unknown', 'empty']);
 
 export const MIN_CARD_PAGE_SIZE = 3;
 export const MAX_CARD_PAGE_SIZE = 100;
-
-/** 批量下载打包后的文件名，与后端打包端点保持一致的默认值。 */
-export const AUTH_FILES_ARCHIVE_FILENAME = 'auth-files.zip';
 
 export const INTEGER_STRING_PATTERN = /^[+-]?\d+$/;
 export const TRUTHY_TEXT_VALUES = new Set(['true', '1', 'yes', 'y', 'on']);
@@ -125,6 +130,9 @@ export const getAuthFileStatusMessage = (file: AuthFileItem): string => {
   if (raw == null) return '';
   return String(raw).trim();
 };
+
+/** 批量下载打包后的文件名，与后端打包端点保持一致的默认值。 */
+export const AUTH_FILES_ARCHIVE_FILENAME = 'auth-files.zip';
 
 /** 后端在凭证列表条目上暴露的上游错误码（`last_error_http_status`）。 */
 export const getAuthFileErrorStatus = (file: AuthFileItem): number | null => {
@@ -264,6 +272,12 @@ export const applyAuthFileWebsockets = (
   next.websockets = websockets;
   return next;
 };
+
+export const supportsAuthFileSiwc = (providerKey: string): boolean =>
+  normalizeProviderKey(providerKey) === 'codex';
+
+export const readAuthFileUseSiwc = (value: Record<string, unknown>): boolean =>
+  parseDisableCoolingValue(value.use_siwc) ?? false;
 
 export const supportsAuthFileUsingApi = (providerKey: string): boolean =>
   AUTH_FILE_USING_API_PROVIDERS.has(normalizeProviderKey(providerKey));

@@ -13,6 +13,10 @@ import { getQuotaCacheKey } from '@/utils/quota/identity';
 import {
   QUOTA_PROVIDER_TYPES,
   clampCardPageSize,
+  getAuthFileClaudeGeneration,
+  getAuthFileCooldownState,
+  getAuthFileErrorStatus,
+  getAuthFileTier,
   getTypeLabel,
   isProblemAuthFile,
   isRuntimeOnlyAuthFile,
@@ -39,12 +43,6 @@ import {
   matchesAuthFileSearch,
   sortAuthFiles,
 } from '@/features/authFiles/logic';
-import {
-  getAuthFileCooldownState,
-  getAuthFileErrorStatus,
-  getAuthFileTier,
-  getAuthFileClaudeGeneration,
-} from '@/features/authFiles/constants';
 import { useAuthFilesData } from '@/features/authFiles/hooks/useAuthFilesData';
 import { useAuthFilesModels } from '@/features/authFiles/hooks/useAuthFilesModels';
 import { useAuthFilesOauth } from '@/features/authFiles/hooks/useAuthFilesOauth';
@@ -96,7 +94,7 @@ export function AuthFilesPage() {
 
   const [filter, setFilter] = useState<'all' | string>('all');
   const [statusFilterMode, setStatusFilterMode] = useState<AuthFilesStatusFilterMode>('all');
-  /** 维度筛选：errorCode / cooldown / tier；缺少键或 'all' 表示不筛选。 */
+  /** 维度筛选：errorCode / cooldown / tier / claudeGeneration；缺少键或 'all' 表示不筛选。 */
   const [dropdownFilters, setDropdownFilters] = useState<AuthFilesDropdownFilters>({});
   const [compactMode, setCompactMode] = useState(false);
   const [search, setSearch] = useState('');
@@ -205,7 +203,7 @@ export function AuthFilesPage() {
     ? (normalizedFilter as QuotaProviderType)
     : null;
   const activeQuotaFilter: AuthFileQuotaFilter =
-    normalizedFilter === 'all' ? 'all' : quotaFilterType;
+    normalizedFilter === 'all' ? 'all' : (quotaFilterType ?? normalizedFilter) || null;
   const pageSize = compactMode ? pageSizeByMode.compact : pageSizeByMode.regular;
   const problemOnly = statusFilterMode === 'problem';
   const disabledOnly = statusFilterMode === 'disabled';
@@ -430,7 +428,7 @@ export function AuthFilesPage() {
     [disabledOnly, enabledOnly, files, problemOnly]
   );
 
-  /** 维度筛选（错误码 / 冷却状态 / 订阅等级）。 */
+  /** 维度筛选（错误码 / 冷却状态 / 订阅等级 / Claude 代次）。 */
   const filesMatchingDropdownFilters = useMemo(
     () =>
       filesMatchingStatusFilters.filter((file) => {
@@ -463,7 +461,7 @@ export function AuthFilesPage() {
           if (fileTier !== null && fileTier !== tier) return false;
         }
 
-        // 反重力按账号发放 Claude 代次：only46 = 只能用 4.6，only55 = 只能用 5.5。
+        // 反重力按账号发放 Claude 代次：claude-4-6 / claude-5-5 / both / none。
         const claudeGeneration = dropdownFilters.claudeGeneration ?? 'all';
         if (claudeGeneration !== 'all') {
           const generation = getAuthFileClaudeGeneration(file);
